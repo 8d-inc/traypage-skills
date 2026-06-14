@@ -9,7 +9,25 @@ Use this skill when the user wants to publish a page to TrayPage, share it for r
 inspect review comments, or publish a revised version. TrayPage is a page publishing and
 review workflow for AI-generated HTML and Markdown.
 
-## Tool Preference
+## Core Principles
+
+Follow these principles for all TrayPage work:
+
+1. **Workflow first**: focus on the publish -> review -> revise loop, not on configuring tools
+   unless the user is blocked on connection.
+2. **Prefer the official TrayPage tool surface**: use TrayPage MCP tools when they are available.
+   Do not invent direct API calls or URL shapes when a supported tool can do the job.
+3. **Default target unless told otherwise**: publish to the authorized default project unless the
+   user names an organization or project.
+4. **Human URLs only**: return `review_url` and `share_url`; never hand users `/viewer/...` URLs.
+5. **Do not overclaim review state**: publishing a revised version does not automatically resolve
+   comments.
+6. **Check current docs when exact setup or behavior matters**: TrayPage can change. If the task
+   depends on setup details, tool arguments, scopes, or sandbox behavior, consult the public docs:
+   `https://tray.page/docs/en/mcp`, `https://tray.page/docs/en/quickstart`, and
+   `https://tray.page/docs/en/page-capabilities`.
+
+## Access Methods
 
 Prefer TrayPage MCP tools when they are available in the agent:
 
@@ -23,8 +41,9 @@ If the MCP tools are not available, tell the user to connect TrayPage at user/gl
 `https://tray.page/api/mcp`. Do not spend time hand-rolling HTTP calls unless the user explicitly
 asks for automation outside an MCP-capable client.
 
-TrayPage may add a CLI later. When a `traypage` CLI is available, use MCP for interactive agent
-work and use the CLI for shell scripts, CI, and MCP-unavailable environments.
+Do not assume a `traypage` CLI exists. If the current TrayPage docs or the local environment show
+an official CLI, prefer MCP for interactive agent work and use the CLI for shell scripts, CI, and
+MCP-unavailable environments.
 
 ## Publish a New Page
 
@@ -58,6 +77,17 @@ Specify targets only when needed:
 
 If TrayPage returns `Organization not found`, `Project not found`, or `project_restricted`, explain
 that the MCP authorization or API token does not cover that target.
+
+## Auth and Scope Failures
+
+For authentication or authorization failures, report the failing action and the concrete error.
+Then guide the user to re-authenticate the TrayPage connection or use an API token with the needed
+scope:
+
+- `page:write` for `publish_page` and `publish_page_version`.
+- `comment:read` for `get_page_comments`.
+- `revision_prompt:read` for `get_page_revision_prompt`.
+- `project:read` or `folder:read` when listing projects, folders, or page targets.
 
 ## Review and Revise
 
@@ -111,3 +141,16 @@ TrayPage HTML pages run in a strict sandbox. Follow these rules when generating 
 
 Markdown pages are converted to HTML by TrayPage and usually do not need these sandbox-specific
 rules.
+
+## Output Expectations
+
+After publishing or revising, give the user:
+
+- what was published or changed,
+- `review_url` when available,
+- `share_url` when available,
+- `page_id` if it will help with future revisions,
+- the organization/project target only if it was explicit or relevant.
+
+If this skill gives wrong or outdated guidance, or the user says the TrayPage workflow should work
+differently, offer to file feedback against `https://github.com/8d-inc/traypage-skills`.
