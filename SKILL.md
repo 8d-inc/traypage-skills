@@ -1,28 +1,31 @@
 ---
 name: traypage
-description: Use when a user wants an AI coding agent to publish HTML or Markdown to TrayPage, share review/share URLs, inspect review comments, and publish revised versions. Prefer TrayPage MCP tools when available; this skill focuses on the TrayPage publish-review-revise workflow rather than app development.
+description: Use when a user wants an AI coding agent to create HTML or Markdown pages in TrayPage, review and share them, publish a reviewed version, inspect review comments, or create revised draft versions. Prefer TrayPage MCP tools when available; this skill focuses on the TrayPage create-review-publish-revise workflow rather than app development.
 ---
 
 # TrayPage
 
-Use this skill when the user wants to publish a page to TrayPage, share it for review,
-inspect review comments, or publish a revised version. TrayPage is a page publishing and
-review workflow for AI-generated HTML and Markdown.
+Use this skill when the user wants to create a page in TrayPage, share it for review,
+publish a reviewed version, inspect review comments, or create a revised draft version.
+TrayPage is a page publishing and review workflow for AI-generated HTML and Markdown.
 
 ## Core Principles
 
 Follow these principles for all TrayPage work:
 
-1. **Workflow first**: focus on the publish -> review -> revise loop, not on configuring tools
-   unless the user is blocked on connection.
+1. **Workflow first**: focus on the create -> review -> publish -> revise loop, not on
+   configuring tools unless the user is blocked on connection.
 2. **Prefer the official TrayPage tool surface**: use TrayPage MCP tools when they are available.
    Do not invent direct API calls or URL shapes when a supported tool can do the job.
-3. **Default target unless told otherwise**: publish to the authorized default project unless the
-   user names an organization or project.
+3. **Default target unless told otherwise**: create pages in the authorized default project unless
+   the user names an organization or project.
 4. **Human URLs only**: return `review_url` and `share_url`; never hand users `/viewer/...` URLs.
-5. **Do not overclaim review state**: publishing a revised version does not automatically resolve
-   comments. Resolve a thread only after replying with what changed or answering the question.
-6. **Check current docs when exact setup or behavior matters**: TrayPage can change. If the task
+5. **Keep creation and publishing separate**: `create_page` and `create_page_version` create draft
+   versions. Call `publish_version` only after the user wants a version shown from the share URL.
+6. **Do not overclaim review state**: creating or publishing a revised version does not
+   automatically resolve comments. Resolve a thread only after replying with what changed or
+   answering the question.
+7. **Check current docs when exact setup or behavior matters**: TrayPage can change. If the task
    depends on setup details, tool arguments, scopes, or sandbox behavior, consult the public docs:
    `https://tray.page/docs/en/mcp`, `https://tray.page/docs/en/quickstart`, and
    `https://tray.page/docs/en/page-capabilities`.
@@ -34,6 +37,7 @@ Prefer TrayPage MCP tools when they are available in the agent:
 - `create_page`
 - `create_page_version`
 - `publish_version`
+- `set_page_visibility`
 - `get_page_comments`
 - `reply_page_comment`
 - `resolve_page_comment`
@@ -48,12 +52,12 @@ Do not assume a `traypage` CLI exists. If the current TrayPage docs or the local
 an official CLI, prefer MCP for interactive agent work and use the CLI for shell scripts, CI, and
 MCP-unavailable environments.
 
-## Publish a New Page
+## Create a New Draft Page
 
 1. Choose `content_type`.
    - Use `text/markdown` for prose-heavy reports, plans, tables, and documentation.
    - Use `text/html` for designed pages, dashboards, interactive artifacts, and rich layout.
-2. For HTML, produce one self-contained document. Inline the data the page needs at publish time.
+2. For HTML, produce one self-contained document. Inline the data the page needs at creation time.
 3. Call `create_page` with:
    - `page_title`
    - `content`
@@ -62,14 +66,31 @@ MCP-unavailable environments.
    - optional `organization_slug` and `project_slug` only when the user asks for a non-default target.
 4. Return the important result fields:
    - `review_url` for authenticated review, comments, and version comparison.
-   - `share_url` for human sharing through TrayPage's share gate.
+   - `share_url` for human sharing through TrayPage's share gate after a version is published.
    - `page_id` for later comment fetching and revisions.
+   - `version_number` for publishing the reviewed version.
+5. Tell the user the created version is a draft. The share URL is stable, but it will not show the
+   draft body until a version is published.
 
 Do not give users `/viewer/...` URLs directly. Viewer URLs are implementation details.
 
+## Publish a Reviewed Version
+
+Use `publish_version` when the user says the version is ready, wants the share link to show it, or
+asks to publish a specific version.
+
+Call `publish_version` with:
+
+- `page_id`
+- `version_number`
+
+Publishing makes that version live on the stable `share_url`. Only one version can be live at a
+time; publishing a new version returns the previous live version to draft. This does not change who
+can open the share URL. Use `set_page_visibility` when the user asks to change the audience.
+
 ## Targeting Organization and Project
 
-By default, publish without `organization_slug` or `project_slug`. TrayPage uses the default
+By default, create without `organization_slug` or `project_slug`. TrayPage uses the default
 project selected during OAuth consent, or the project attached to the API token.
 
 Specify targets only when needed:
@@ -88,7 +109,7 @@ Then guide the user to re-authenticate the TrayPage connection or use an API tok
 scope:
 
 - `page:write` for `create_page`, `create_page_version`, `publish_version`,
-  `reply_page_comment`, and `resolve_page_comment`.
+  `set_page_visibility`, `reply_page_comment`, and `resolve_page_comment`.
 - `comment:read` for `get_page_comments`.
 - `revision_prompt:read` for `get_page_revision_prompt`.
 - `project:read` or `folder:read` when listing projects, folders, or page targets.
@@ -98,7 +119,7 @@ scope:
 When the user asks to apply TrayPage comments:
 
 1. Identify the page.
-   - Prefer a saved `page_id` from the prior publish result.
+   - Prefer a saved `page_id` from the prior create result.
    - If missing, call `list_pages` and match by title, slug, folder, or project.
 2. Call `get_page_revision_prompt` with `page_id`.
    - Pass `version_number` only when the user asks to revise a specific version.
@@ -111,19 +132,13 @@ When the user asks to apply TrayPage comments:
    - updated `content`
    - `content_type`
    - concise `changelog`
-6. If the revised version should become live on the share URL, call `publish_version` with the new
-   `version_number`. If the user asked only for a draft/review update, leave it as a draft.
-7. For each addressed open thread, call `reply_page_comment` with a concise note:
-   - what changed, when a page change was made,
-   - the direct answer, when the comment was a question,
-   - what was checked, when verification matters.
-8. Call `resolve_page_comment` only for threads that are actually handled. Leave unclear,
-   disputed, or intentionally deferred comments open after replying with the blocker.
-9. Return the new `version_number` and `share_url`, and tell the user reviewers can continue from
-   the existing review page.
+6. Return the new `version_number`, `review_url`/`share_url` when available, and tell the user the
+   revised version is a draft until published.
+7. If the user wants the revised version to appear from the share URL, call `publish_version` with
+   the new `version_number` after review.
 
-Publishing a new version addresses feedback; it does not automatically close review threads. The
-agent must reply and resolve through TrayPage tools when it is asked to close the loop.
+Creating or publishing a new version addresses feedback; it does not automatically close review
+threads. Reply to and resolve handled threads through TrayPage tools when feedback is addressed.
 
 ## Inspect Comments
 
@@ -182,9 +197,9 @@ rules.
 
 ## Output Expectations
 
-After publishing or revising, give the user:
+After creating, publishing, or revising, give the user:
 
-- what was published or changed,
+- what was created, published, or changed,
 - `review_url` when available,
 - `share_url` when available,
 - `page_id` if it will help with future revisions,
