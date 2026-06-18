@@ -21,7 +21,7 @@ Follow these principles for all TrayPage work:
    user names an organization or project.
 4. **Human URLs only**: return `review_url` and `share_url`; never hand users `/viewer/...` URLs.
 5. **Do not overclaim review state**: publishing a revised version does not automatically resolve
-   comments.
+   comments. Resolve a thread only after replying with what changed or answering the question.
 6. **Check current docs when exact setup or behavior matters**: TrayPage can change. If the task
    depends on setup details, tool arguments, scopes, or sandbox behavior, consult the public docs:
    `https://tray.page/docs/en/mcp`, `https://tray.page/docs/en/quickstart`, and
@@ -31,9 +31,12 @@ Follow these principles for all TrayPage work:
 
 Prefer TrayPage MCP tools when they are available in the agent:
 
-- `publish_page`
-- `publish_page_version`
+- `create_page`
+- `create_page_version`
+- `publish_version`
 - `get_page_comments`
+- `reply_page_comment`
+- `resolve_page_comment`
 - `get_page_revision_prompt`
 - `list_pages`
 
@@ -51,7 +54,7 @@ MCP-unavailable environments.
    - Use `text/markdown` for prose-heavy reports, plans, tables, and documentation.
    - Use `text/html` for designed pages, dashboards, interactive artifacts, and rich layout.
 2. For HTML, produce one self-contained document. Inline the data the page needs at publish time.
-3. Call `publish_page` with:
+3. Call `create_page` with:
    - `page_title`
    - `content`
    - `content_type`
@@ -84,7 +87,8 @@ For authentication or authorization failures, report the failing action and the 
 Then guide the user to re-authenticate the TrayPage connection or use an API token with the needed
 scope:
 
-- `page:write` for `publish_page` and `publish_page_version`.
+- `page:write` for `create_page`, `create_page_version`, `publish_version`,
+  `reply_page_comment`, and `resolve_page_comment`.
 - `comment:read` for `get_page_comments`.
 - `revision_prompt:read` for `get_page_revision_prompt`.
 - `project:read` or `folder:read` when listing projects, folders, or page targets.
@@ -102,16 +106,24 @@ When the user asks to apply TrayPage comments:
    - If it is empty or ambiguous, call `get_page_comments` with `status: "open"` and summarize
      the actionable comments before editing.
 4. Revise the original content. Preserve the content type unless the user asks to change it.
-5. Call `publish_page_version` with:
+5. Call `create_page_version` with:
    - `page_id`
    - updated `content`
    - `content_type`
    - concise `changelog`
-6. Return the new `version_number` and `share_url`, and tell the user reviewers can continue from
+6. If the revised version should become live on the share URL, call `publish_version` with the new
+   `version_number`. If the user asked only for a draft/review update, leave it as a draft.
+7. For each addressed open thread, call `reply_page_comment` with a concise note:
+   - what changed, when a page change was made,
+   - the direct answer, when the comment was a question,
+   - what was checked, when verification matters.
+8. Call `resolve_page_comment` only for threads that are actually handled. Leave unclear,
+   disputed, or intentionally deferred comments open after replying with the blocker.
+9. Return the new `version_number` and `share_url`, and tell the user reviewers can continue from
    the existing review page.
 
-Do not claim comments are resolved unless TrayPage returns that state or the user resolves them in
-the UI. Publishing a new version addresses feedback; it does not automatically close review threads.
+Publishing a new version addresses feedback; it does not automatically close review threads. The
+agent must reply and resolve through TrayPage tools when it is asked to close the loop.
 
 ## Inspect Comments
 
@@ -126,6 +138,32 @@ Recommended arguments:
 
 Report comments as actionable work items with enough context to revise accurately. Avoid dumping
 long comment histories unless the user asks.
+
+## Reply and Resolve Comments
+
+Use `reply_page_comment` and `resolve_page_comment` whenever an open comment is handled by the
+agent's page change or by a direct answer the agent can give from the available evidence.
+
+Recommended workflow:
+
+1. Fetch open comments with `get_page_comments` or use `get_page_revision_prompt` for the edit
+   instructions.
+2. Make and verify the required page changes, or prepare a direct answer when no page change is
+   needed.
+3. For each thread, decide whether the correct response is a page change, a direct answer, or a
+   clarification that should remain open.
+4. Call `reply_page_comment` with a specific response. Match the reply language to the original
+   comment language, for example reply in English to English comments and in Japanese to Japanese
+   comments. Avoid vague replies such as "fixed".
+5. Call `resolve_page_comment` after the feedback is addressed and the thread no longer needs
+   reviewer action.
+
+Do not resolve a thread when:
+
+- the comment asks a question you cannot answer from the current evidence,
+- the requested change was intentionally not made,
+- the implementation is incomplete or unverified,
+- the comment is a broader product decision that needs the user.
 
 ## HTML Page Rules
 
