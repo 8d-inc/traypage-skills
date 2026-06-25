@@ -1,7 +1,7 @@
 interface:
   display_name: "TrayPage"
   short_description: "Create, publish, and revise TrayPage pages"
-  default_prompt: "Use $traypage to create this as a TrayPage page, prepare it for review, and publish it when ready."
+  default_prompt: "Use $traypage to create this as a TrayPage page, publish it when ready, and start a connected review session if the TrayPage CLI is available."
 
 policy:
   allow_implicit_invocation: true

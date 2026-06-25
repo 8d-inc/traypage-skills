@@ -22,10 +22,16 @@ Follow these principles for all TrayPage work:
 4. **Human URLs only**: return `review_url` and `share_url`; never hand users `/viewer/...` URLs.
 5. **Keep creation and publishing separate**: `create_page` and `create_page_version` create draft
    versions. Call `publish_version` only after the user wants a version shown from the share URL.
-6. **Do not overclaim review state**: creating or publishing a revised version does not
+6. **Use connected review sessions when possible**: after publishing, start a TrayPage CLI review
+   session when an official `traypage` CLI is available. Give the user the review-session URL and
+   ask them to open that URL, not a previously opened page tab.
+7. **Act on review completion**: when a review-session result or revision prompt arrives, treat it
+   as the next work item. Apply the feedback, create a revised draft version, and report the new
+   review URL instead of stopping at a summary.
+8. **Do not overclaim review state**: creating or publishing a revised version does not
    automatically resolve comments. Resolve a thread only after replying with what changed or
    answering the question.
-7. **Check current docs when exact setup or behavior matters**: TrayPage can change. If the task
+9. **Check current docs when exact setup or behavior matters**: TrayPage can change. If the task
    depends on setup details, tool arguments, scopes, or sandbox behavior, consult the public docs:
    `https://tray.page/docs/en/mcp`, `https://tray.page/docs/en/quickstart`, and
    `https://tray.page/docs/en/page-capabilities`.
@@ -48,9 +54,16 @@ If the MCP tools are not available, tell the user to connect TrayPage at user/gl
 `https://tray.page/api/mcp`. Do not spend time hand-rolling HTTP calls unless the user explicitly
 asks for automation outside an MCP-capable client.
 
-Do not assume a `traypage` CLI exists. If the current TrayPage docs or the local environment show
-an official CLI, prefer MCP for interactive agent work and use the CLI for shell scripts, CI, and
-MCP-unavailable environments.
+Use the official `traypage` CLI when it is installed or the current docs/environment show it is
+available. MCP remains the preferred surface for creating and publishing page content; the CLI is
+the preferred surface for connected review sessions because it can wait for review completion and
+resume the agent loop.
+
+If the CLI is not available after publishing, tell the user that the page was published and explain
+the practical benefit of installing/using the CLI: it can create a review session, give the reviewer
+a session-specific URL, wait or resume later, and hand completed review feedback back to the agent
+without manual copy/paste. Do not block the publish result on CLI setup unless the user asked for a
+fully connected review loop.
 
 ## Create a New Draft Page
 
@@ -88,6 +101,26 @@ Publishing makes that version live on the stable `share_url`. Only one version c
 time; publishing a new version returns the previous live version to draft. This does not change who
 can open the share URL. Use `set_page_visibility` when the user asks to change the audience.
 
+After publishing, check whether an official `traypage` CLI is available. If it is, start a review
+session for the published page/version, for example:
+
+```bash
+traypage review start --page <page_id> --version <version_number> --watch
+```
+
+Use the exact command shape supported by the installed CLI or current TrayPage docs. When the
+review session starts:
+
+1. Give the user the returned review URL.
+2. Tell them to open that URL. A normal page tab opened before the session started will not
+   automatically connect to the review session, because the session is identified by the
+   `reviewSession` URL parameter.
+3. Keep watching when the user expects the agent to continue after review. If the agent cannot stay
+   attached, give the resume command returned by the CLI.
+
+If the CLI is not available, still return the normal `review_url`/`share_url`, then explain that the
+CLI enables the connected "review complete -> agent resumes -> revised version" flow.
+
 ## Targeting Organization and Project
 
 By default, create without `organization_slug` or `project_slug`. TrayPage uses the default
@@ -116,6 +149,9 @@ scope:
 
 ## Review and Revise
 
+When a connected review session finishes, immediately use the returned review result as the
+revision input. Do not merely tell the user that feedback is available.
+
 When the user asks to apply TrayPage comments:
 
 1. Identify the page.
@@ -136,6 +172,8 @@ When the user asks to apply TrayPage comments:
    revised version is a draft until published.
 7. If the user wants the revised version to appear from the share URL, call `publish_version` with
    the new `version_number` after review.
+8. If the revision follows a connected review session, give the user the new review URL and, when
+   CLI support is available, start or offer to start the next review session for the new version.
 
 Creating or publishing a new version addresses feedback; it does not automatically close review
 threads. Reply to and resolve handled threads through TrayPage tools when feedback is addressed.
@@ -203,7 +241,12 @@ After creating, publishing, or revising, give the user:
 - `review_url` when available,
 - `share_url` when available,
 - `page_id` if it will help with future revisions,
-- the organization/project target only if it was explicit or relevant.
+- the organization/project target only if it was explicit or relevant,
+- review-session URL and resume command when a CLI review session was started.
+
+When a review session is involved, phrase the next step concretely: ask the user to open the
+session-specific URL you just returned. Avoid saying "use the page you already have open" because a
+pre-existing tab without `reviewSession=...` is not connected to the CLI watcher.
 
 If this skill gives wrong or outdated guidance, or the user says the TrayPage workflow should work
 differently, offer to file feedback against `https://github.com/8d-inc/traypage-skills`.
