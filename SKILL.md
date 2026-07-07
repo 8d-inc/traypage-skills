@@ -22,9 +22,11 @@ Follow these principles for all TrayPage work:
 4. **Human URLs only**: return `review_url` and `share_url`; never hand users `/viewer/...` URLs.
 5. **Keep creation and publishing separate**: `create_page` and `create_page_version` create draft
    versions. Call `publish_version` only after the user wants a version shown from the share URL.
-6. **Use connected review sessions when possible**: after publishing, start a TrayPage CLI review
-   session when an official `traypage` CLI is available. Give the user the review-session URL and
-   ask them to open that URL, not a previously opened page tab.
+6. **Use connected review sessions as a foreground handoff when possible**: after creating or
+   publishing a version that needs human review, start a TrayPage CLI review session with the agent
+   watcher attached when an official `traypage` CLI is available. The waiting CLI process is the
+   contract that hands review feedback back to the agent. Ask the user to use the session-specific
+   URL that the CLI prints or opens, not a previously opened page tab.
 7. **Act on review completion**: when a review-session result or revision prompt arrives, treat it
    as the next work item. Apply the feedback, create a revised draft version, and report the new
    review URL instead of stopping at a summary.
@@ -56,14 +58,15 @@ asks for automation outside an MCP-capable client.
 
 Use the official `traypage` CLI when it is installed or the current docs/environment show it is
 available. MCP remains the preferred surface for creating and publishing page content; the CLI is
-the preferred surface for connected review sessions because it can wait for review completion and
-resume the agent loop.
+the preferred surface for connected review sessions because it can create a session-specific review
+URL, keep an agent watcher connected, wait for review completion, and resume the agent loop from
+stdout.
 
-If the CLI is not available after publishing, tell the user that the page was published and explain
-the practical benefit of installing/using the CLI: it can create a review session, give the reviewer
-a session-specific URL, wait or resume later, and hand completed review feedback back to the agent
-without manual copy/paste. Do not block the publish result on CLI setup unless the user asked for a
-fully connected review loop.
+If the CLI is not available when a version is ready for review, return the normal review/share URLs
+and explain the practical benefit of installing/using the CLI: it can create a review session, give
+the reviewer a session-specific URL, wait or resume later, and hand completed review feedback back
+to the agent without manual copy/paste. Do not block the page result on CLI setup unless the user
+asked for a fully connected review loop.
 
 ## Create a New Draft Page
 
@@ -101,22 +104,29 @@ Publishing makes that version live on the stable `share_url`. Only one version c
 time; publishing a new version returns the previous live version to draft. This does not change who
 can open the share URL. Use `set_page_visibility` when the user asks to change the audience.
 
-After publishing, check whether an official `traypage` CLI is available. If it is, start a review
-session for the published page/version, for example:
+After creating or publishing a version that needs human review, check whether an official
+`traypage` CLI is available. If it is, start a foreground review session for that page/version with
+the watcher attached, for example:
 
 ```bash
 traypage review start --page <page_id> --version <version_number> --watch
 ```
 
-Use the exact command shape supported by the installed CLI or current TrayPage docs. When the
-review session starts:
+Use the exact command shape supported by the installed CLI or current TrayPage docs. If the
+installed CLI supports an `--open` flag, use it; otherwise give the printed review URL to the user.
+The important behavior is not that a review session was merely created. It is that the command
+prints or opens the session-specific review URL and the agent watcher stays attached until the user
+finishes review. When the review session starts:
 
-1. Give the user the returned review URL.
-2. Tell them to open that URL. A normal page tab opened before the session started will not
+1. Give the user the returned review URL if the CLI did not already open it.
+2. Tell them to use that URL. A normal page tab opened before the session started will not
    automatically connect to the review session, because the session is identified by the
    `reviewSession` URL parameter.
-3. Keep watching when the user expects the agent to continue after review. If the agent cannot stay
-   attached, give the resume command returned by the CLI.
+3. Keep the command running when the user expects the agent to continue after review. Treat the
+   finished CLI output as the next work item. If the agent cannot stay attached, give the resume
+   command returned by the CLI and tell the user that they can resume the same session later.
+4. If you are unsure whether the watcher is connected, run `traypage review status <session_id>` and
+   report `agent_connected` and `active_watchers` rather than inferring from URL creation.
 
 If the CLI is not available, still return the normal `review_url`/`share_url`, then explain that the
 CLI enables the connected "review complete -> agent resumes -> revised version" flow.
@@ -150,7 +160,8 @@ scope:
 ## Review and Revise
 
 When a connected review session finishes, immediately use the returned review result as the
-revision input. Do not merely tell the user that feedback is available.
+revision input. Do not merely tell the user that feedback is available. The CLI output is the
+handoff from browser review back into the agent workflow.
 
 When the user asks to apply TrayPage comments:
 
@@ -172,8 +183,9 @@ When the user asks to apply TrayPage comments:
    revised version is a draft until published.
 7. If the user wants the revised version to appear from the share URL, call `publish_version` with
    the new `version_number` after review.
-8. If the revision follows a connected review session, give the user the new review URL and, when
-   CLI support is available, start or offer to start the next review session for the new version.
+8. If the revision follows a connected review session and the user wants another review round,
+   publish the new version when appropriate and start the next foreground review session with
+   `traypage review start --watch`, adding `--open` only when the installed CLI supports it.
 
 Creating or publishing a new version addresses feedback; it does not automatically close review
 threads. Reply to and resolve handled threads through TrayPage tools when feedback is addressed.
@@ -242,11 +254,15 @@ After creating, publishing, or revising, give the user:
 - `share_url` when available,
 - `page_id` if it will help with future revisions,
 - the organization/project target only if it was explicit or relevant,
-- review-session URL and resume command when a CLI review session was started.
+- review-session URL, watcher connection state, and resume command when a CLI review session was
+  started.
 
 When a review session is involved, phrase the next step concretely: ask the user to open the
 session-specific URL you just returned. Avoid saying "use the page you already have open" because a
 pre-existing tab without `reviewSession=...` is not connected to the CLI watcher.
+
+If the CLI was started with `--watch`, keep the process in the foreground and wait for it to return
+the review result unless the user explicitly asks for an asynchronous handoff.
 
 If this skill gives wrong or outdated guidance, or the user says the TrayPage workflow should work
 differently, offer to file feedback against `https://github.com/8d-inc/traypage-skills`.
