@@ -22,9 +22,10 @@ Follow these principles for all TrayPage work:
 4. **Human URLs only**: return `review_url` and `share_url`; never hand users `/viewer/...` URLs.
 5. **Keep creation and publishing separate**: `create_page` and `create_page_version` create draft
    versions. Call `publish_version` only after the user wants a version shown from the share URL.
-6. **Use connected review sessions when possible**: after publishing, start a TrayPage CLI review
-   session when an official `traypage` CLI is available. Give the user the review-session URL and
-   ask them to open that URL, not a previously opened page tab.
+6. **Use connected review sessions when possible**: after creating or publishing a version that
+   needs human review, start a TrayPage CLI review session with the watcher attached when an
+   official `traypage` CLI is available. Give the user the session-specific URL and ask them to
+   open that URL, not a previously opened page tab. A review session does not publish the draft.
 7. **Act on review completion**: when a review-session result or revision prompt arrives, treat it
    as the next work item. Apply the feedback, create a revised draft version, and report the new
    review URL instead of stopping at a summary.
@@ -54,15 +55,28 @@ If the MCP tools are not available, tell the user to connect TrayPage at user/gl
 `https://tray.page/api/mcp`. Do not spend time hand-rolling HTTP calls unless the user explicitly
 asks for automation outside an MCP-capable client.
 
+In Claude Code, this skill can also be loaded by the TrayPage plugin as
+`/traypage:page`. The plugin already declares the MCP connection: use `/mcp` to
+authenticate the TrayPage server rather than adding another server. Plugin tools may be
+namespaced as `mcp__plugin_traypage_traypage__...`; match the tool's operation, not a fixed prefix.
+Use tool search when the client exposes tools lazily. If a configured server has not loaded,
+reload plugins or start a new session before treating the connection as absent.
+
 Use the official `traypage` CLI when it is installed or the current docs/environment show it is
 available. MCP remains the preferred surface for creating and publishing page content; the CLI is
 the preferred surface for connected review sessions because it can wait for review completion and
-resume the agent loop.
+resume the agent loop. MCP authentication does not authenticate the CLI. Check `traypage auth status`
+for both authentication and API base URL. Before starting a review, confirm the CLI points at the
+same TrayPage environment as the MCP server, including any `TRAYPAGE_MCP_URL` override. Use
+`TRAYPAGE_API_BASE_URL` or `--api-base-url` to select that environment and `traypage auth login` when
+needed; select access matching the page's organization/project. The CLI base URL is the origin,
+not the MCP endpoint: for `http://localhost:3000/api/mcp`, use `http://localhost:3000`.
 
-If the CLI is not available after publishing, tell the user that the page was published and explain
+If the CLI is not available when a version is ready for review, return the normal review/share URLs
+and report whether the version is a draft or published. Explain
 the practical benefit of installing/using the CLI: it can create a review session, give the reviewer
 a session-specific URL, wait or resume later, and hand completed review feedback back to the agent
-without manual copy/paste. Do not block the publish result on CLI setup unless the user asked for a
+without manual copy/paste. Do not block the page result on CLI setup unless the user asked for a
 fully connected review loop.
 
 ## Create a New Draft Page
@@ -76,7 +90,7 @@ fully connected review loop.
    - `content`
    - `content_type`
    - optional `changelog`
-   - optional `organization_slug` and `project_slug` only when the user asks for a non-default target.
+   - optional `organization_id` and `project_id` only when the user asks for a non-default target.
 4. Return the important result fields:
    - `review_url` for authenticated review, comments, and version comparison.
    - `share_url` for human sharing through TrayPage's share gate after a version is published.
@@ -86,6 +100,9 @@ fully connected review loop.
    draft body until a version is published.
 
 Do not give users `/viewer/...` URLs directly. Viewer URLs are implementation details.
+
+If the user wants human review before publishing, start a connected review session for this draft
+when the CLI is available, using the command and handoff below. Do not publish just to start review.
 
 ## Publish a Reviewed Version
 
@@ -101,8 +118,10 @@ Publishing makes that version live on the stable `share_url`. Only one version c
 time; publishing a new version returns the previous live version to draft. This does not change who
 can open the share URL. Use `set_page_visibility` when the user asks to change the audience.
 
-After publishing, check whether an official `traypage` CLI is available. If it is, start a review
-session for the published page/version, for example:
+## Connected Browser Review
+
+When a draft or published version needs human review, check whether an official `traypage` CLI is
+available. If it is, start a review session for that page/version:
 
 ```bash
 traypage review start --page <page_id> --version <version_number> --watch
@@ -115,21 +134,29 @@ review session starts:
 2. Tell them to open that URL. A normal page tab opened before the session started will not
    automatically connect to the review session, because the session is identified by the
    `reviewSession` URL parameter.
-3. Keep watching when the user expects the agent to continue after review. If the agent cannot stay
-   attached, give the resume command returned by the CLI.
+3. Keep the watcher attached and wait for the result when the user expects the agent to continue
+   after review. Avoid `--json` with `--watch`: it hides the initial review URL until completion.
+   If an asynchronous handoff is requested, give the resume command returned by the CLI. A resume
+   checks the current result; if review is still waiting, it can return that state without waiting.
+
+Review sessions require CLI authentication and access to read comments and revision prompts.
+Report connection or scope failures without publishing the draft or switching the page target.
+Never paste authentication tokens or review-session watch tokens into chat or page content.
 
 If the CLI is not available, still return the normal `review_url`/`share_url`, then explain that the
 CLI enables the connected "review complete -> agent resumes -> revised version" flow.
 
 ## Targeting Organization and Project
 
-By default, create without `organization_slug` or `project_slug`. TrayPage uses the default
+By default, create without `organization_id` or `project_id`. TrayPage uses the default
 project selected during OAuth consent, or the project attached to the API token.
 
 Specify targets only when needed:
 
-- Use `project_slug` when the user names another authorized project in the same organization.
-- Use both `organization_slug` and `project_slug` when the user names another organization.
+- Use `project_id` when the user names another authorized project in the same organization.
+- Use both `organization_id` and `project_id` when the user names another organization.
+- Resolve names to actual IDs using available tools or ask for the ID. Do not send a slug in an ID
+  field. CLI organization/project flags accept slugs; MCP arguments use IDs.
 - If the target is unclear, ask one short question rather than guessing.
 
 If TrayPage returns `Organization not found`, `Project not found`, or `project_restricted`, explain
@@ -223,11 +250,13 @@ Do not resolve a thread when:
 TrayPage HTML pages run in a strict sandbox. Follow these rules when generating or debugging HTML:
 
 - Make the page a single self-contained HTML document.
-- Inline all data needed for rendering; runtime `fetch`, XHR, WebSocket, SSE, and `sendBeacon` are blocked.
+- Inline the data needed at creation time. HTTPS APIs and WSS connections are allowed for live data;
+  never embed private credentials in client-side code.
 - Do not use `localStorage`, `sessionStorage`, IndexedDB, or cookies.
-- Handle forms in JavaScript with `preventDefault()`; native form submission is blocked.
+- Native forms may submit to HTTPS endpoints; JavaScript submit handlers also work.
 - Use pinned `https:` CDN URLs for libraries when needed.
-- Replace iframes and live embeds with normal links.
+- HTTPS iframes and live embeds are allowed when the embedded service permits framing. Provide a
+  normal fallback link when it does not.
 - Do not interpolate private data into image, script, style, or font URLs.
 
 Markdown pages are converted to HTML by TrayPage and usually do not need these sandbox-specific
