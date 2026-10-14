@@ -1,0 +1,16 @@
+{
+  "name": "traypage",
+  "description": "The TrayPage skill and MCP connection for Claude Code.",
+  "owner": {
+    "name": "8d",
+    "url": "https://tray.page"
+  },
+  "plugins": [
+    {
+      "name": "traypage",
+      "source": "./",
+      "description": "Create, review, publish, and revise TrayPage pages.",
+      "category": "productivity"
+    }
+  ]
+}

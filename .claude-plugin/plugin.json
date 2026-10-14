@@ -1,0 +1,19 @@
+{
+  "name": "traypage",
+  "version": "0.1.0",
+  "description": "Create HTML and Markdown pages, review feedback, and publish revisions with TrayPage.",
+  "author": {
+    "name": "8d",
+    "url": "https://tray.page"
+  },
+  "homepage": "https://tray.page/docs/en/mcp",
+  "repository": "https://github.com/8d-inc/traypage-skills",
+  "keywords": ["traypage", "html", "markdown", "review", "publishing"],
+  "skills": [],
+  "commands": {
+    "page": {
+      "source": "./SKILL.md",
+      "description": "Create, review, publish, and revise TrayPage pages."
+    }
+  }
+}
