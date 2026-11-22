@@ -89,7 +89,7 @@ fully connected review loop.
    - `page_title`
    - `content`
    - `content_type`
-   - optional `changelog`
+   - optional `changelog` (a short note about the first version)
    - optional `organization_id` and `project_id` only when the user asks for a non-default target.
 4. Return the important result fields:
    - `review_url` for authenticated review, comments, and version comparison.
@@ -194,13 +194,19 @@ When the user asks to apply TrayPage comments:
    - `page_id`
    - updated `content`
    - `content_type`
-   - concise `changelog`
+   - `changelog` (always pass it; see below)
 6. Return the new `version_number`, `review_url`/`share_url` when available, and tell the user the
    revised version is a draft until published.
 7. If the user wants the revised version to appear from the share URL, call `publish_version` with
    the new `version_number` after review.
 8. If the revision follows a connected review session, give the user the new review URL and, when
    CLI support is available, start or offer to start the next review session for the new version.
+
+Write the `changelog` for the reviewer. TrayPage shows it above the page when the reviewer opens the
+version and again in the publish confirmation, so it is the first thing they read to check the
+fixes. List each review comment you addressed and any other visible change, one per line, in the
+reviewers' language (plain text, up to 2000 characters). A version saved without it shows "No
+change summary", and the changelog cannot be edited after the version is saved.
 
 Creating or publishing a new version addresses feedback; it does not automatically close review
 threads. Reply to and resolve handled threads through TrayPage tools when feedback is addressed.
@@ -236,7 +242,9 @@ Recommended workflow:
    comment language, for example reply in English to English comments and in Japanese to Japanese
    comments. Avoid vague replies such as "fixed".
 5. Call `resolve_page_comment` after the feedback is addressed and the thread no longer needs
-   reviewer action.
+   reviewer action. When a new version contains the fix, pass that version's `version_number` so
+   the resolved comment shows which version addressed it (for example "Addressed in v3"). Omit
+   `version_number` when the thread was answered without changing the page.
 
 Do not resolve a thread when:
 
